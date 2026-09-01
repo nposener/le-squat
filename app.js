@@ -139,7 +139,7 @@ function renderLibrary() {
   const selected = currentWorkout() || data.workouts[0];
   selectedWorkoutId = selected.id;
   byId("workout-selector").innerHTML = data.workouts.map((workout) => `<button class="workout-tab ${workout.id === selected.id ? "active" : ""}" style="--accent: var(--${workout.accent || "coral"})" data-workout-id="${workout.id}" role="tab" aria-selected="${workout.id === selected.id}"><strong>${escapeHtml(workout.name)}</strong><span>${escapeHtml(workout.subtitle || "Custom workout")}</span></button>`).join("");
-  byId("workout-panel").innerHTML = `<div class="workout-title"><div><h2>${escapeHtml(selected.name)}</h2><p>${escapeHtml(selected.subtitle || "Custom workout")} / ${estimateText(selected)}</p></div><div class="workout-actions">${isCustomWorkout(selected) ? `<button class="secondary-button" id="edit-workout">Edit workout</button>` : ""}${hasResumableSession() ? `<button class="secondary-button" id="resume-session">Resume session</button>` : ""}<button class="secondary-button reset-progress" id="reset-progress">Reset checks</button><button class="primary-button" id="start-workout">Start guided session</button></div></div>${selected.sections.map(renderSection).join("")}`;
+  byId("workout-panel").innerHTML = `<div class="workout-title"><div><h2>${escapeHtml(selected.name)}</h2><p>${escapeHtml(selected.subtitle || "Custom workout")} / ${estimateText(selected)}</p></div><div class="workout-actions">${isCustomWorkout(selected) ? `<button class="secondary-button" id="edit-workout">Edit workout</button>` : ""}${hasResumableSession() ? `<button class="secondary-button" id="resume-session">Resume session</button><button class="secondary-button" id="stop-session">Stop session</button>` : ""}<button class="secondary-button reset-progress" id="reset-progress">Reset checks</button><button class="primary-button" id="start-workout">Start guided session</button></div></div>${selected.sections.map(renderSection).join("")}`;
 }
 
 function renderSection(section) {
@@ -207,6 +207,14 @@ function resumeGuided() {
   showPage("guided");
   renderGuided();
   if (activeSession.phase === "rest" || activeSession.phase === "timed-work") startTimer();
+}
+function stopSession() {
+  clearInterval(timerId);
+  timerId = null;
+  activeSession = undefined;
+  completedExercises = new Set();
+  persistActiveSession();
+  renderLibrary();
 }
 function hasResumableSession() { return activeSession && activeSession.index < activeSession.steps.length; }
 function stepTitle(step) { return `${exerciseName(step.exercise)}${step.side ? ` (${step.side.toLowerCase()} side)` : ""}`; }
@@ -401,12 +409,18 @@ function resetPlan() { if (!confirm("Reset the workout library to the original t
 
 document.addEventListener("click", (event) => {
   const target = event.target.closest("button");
-  if (!target) return;
+  if (!target) {
+    const row = event.target.closest(".exercise-row");
+    if (!row || event.target.closest("label, select, input, summary, details")) return;
+    row.querySelector("[data-complete-id]").click();
+    return;
+  }
   if (target.dataset.page) return showPage(target.dataset.page);
   if (target.dataset.workoutId) { selectedWorkoutId = target.dataset.workoutId; completedExercises = new Set(); renderLibrary(); }
   if (target.dataset.change) changeExercise(target.dataset.exerciseId, target.dataset.change, Number(target.dataset.delta));
   if (target.id === "start-workout") startGuided();
   if (target.id === "resume-session") resumeGuided();
+  if (target.id === "stop-session") stopSession();
   if (target.id === "edit-workout") openBuilderForWorkout(currentWorkout());
   if (target.id === "exit-guided" || target.id === "return-library") showPage("library");
   if (target.id === "finish-set") finishSet();
