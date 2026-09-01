@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f5f4ee" />
+    <title>Le Squat</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="Le Squat home"><span>LE</span><i>/</i><span>SQUAT</span></a>
+        <nav class="main-nav" aria-label="Main navigation">
+          <button class="nav-link active" data-page="library">Workouts</button>
+          <button class="nav-link" data-page="create">Create</button>
+        </nav>
+        <div class="file-tools">
+          <button class="text-button" id="reset-button">Reset plan</button>
+          <button class="text-button" id="import-button">Open JSON</button>
+          <button class="text-button" id="save-button">Save file</button>
+          <input id="file-input" type="file" accept="application/json,.json" hidden />
+        </div>
+      </header>
+
+      <section id="library-page" class="page active">
+        <div class="intro-row">
+          <div>
+            <p class="eyebrow">HOME TRAINING</p>
+            <h1>Make the set.<br />Keep going.</h1>
+          </div>
+        </div>
+        <div class="workout-selector" id="workout-selector" role="tablist" aria-label="Select workout"></div>
+        <section class="workout-panel" id="workout-panel"></section>
+      </section>
+
+      <section id="guided-page" class="page guided-page">
+        <button class="back-button" id="exit-guided">Back to workout</button>
+        <div class="guided-header">
+          <p class="eyebrow" id="guided-kicker">GUIDED SESSION</p>
+          <span id="guided-count">1 / 1</span>
+        </div>
+        <div class="progress-line"><i id="progress-fill"></i></div>
+        <article class="guided-card" id="guided-card"></article>
+      </section>
+
+      <section id="create-page" class="page create-page">
+        <div class="create-heading">
+          <p class="eyebrow">WORKOUT BUILDER</p>
+          <h1>Make it yours.</h1>
+          <p>Build a reusable workout. It becomes available in your library immediately.</p>
+        </div>
+        <form id="workout-form" class="builder-form">
+          <label>Workout name<input name="name" required placeholder="e.g. Morning Reset" maxlength="60" /></label>
+          <label>Short description<input name="subtitle" placeholder="e.g. Light mobility and strength" maxlength="80" /></label>
+          <div class="form-grid">
+            <label>Style<select name="accent"><option value="coral">Coral</option><option value="blue">Ocean</option><option value="gold">Gold</option></select></label>
+            <label>Default rest<input name="defaultRest" type="number" min="0" max="600" value="60" inputmode="numeric" /><small>seconds</small></label>
+          </div>
+          <div class="builder-exercises">
+            <div class="builder-section-header"><h2>Exercises</h2><button type="button" class="icon-button" id="add-exercise" aria-label="Add exercise" title="Add exercise">+</button></div>
+            <div id="exercise-fields"></div>
+          </div>
+          <div class="form-actions"><button type="submit" class="primary-button">Add workout</button><button type="reset" class="secondary-button" id="clear-builder">Clear</button></div>
+        </form>
+      </section>
+    </main>
+    <template id="exercise-field-template">
+      <fieldset class="exercise-field">
+        <div class="exercise-field-top"><strong>Exercise</strong><button type="button" class="remove-exercise" aria-label="Remove exercise" title="Remove exercise">x</button></div>
+        <div class="field-grid wide"><label>Name<input data-field="name" required placeholder="Exercise name" /></label><label>Target<input data-field="target" required placeholder="12 reps or 30 sec" /></label></div>
+        <div class="field-grid"><label>Sets<input data-field="sets" type="number" min="1" value="3" inputmode="numeric" /></label><label>Rest<input data-field="rest" type="number" min="0" value="60" inputmode="numeric" /><small>seconds</small></label></div>
+      </fieldset>
+    </template>
+    <script src="starter-data.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
