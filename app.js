@@ -242,15 +242,17 @@ function renderGuided() {
   if (isRest) {
     byId("guided-card").innerHTML = `<p class="section-tag">NEXT: ${escapeHtml(stepTitle(step))}</p><h1>Catch your breath.</h1><p class="timer rest" id="guided-timer">${clock(session.remaining)}</p><div class="guided-actions"><button class="primary-button" id="skip-rest">Skip rest</button><button class="secondary-button" id="pause-rest">Pause</button></div>${alertToggle}`;
   } else if (session.phase === "timed-work") {
-    byId("guided-card").innerHTML = `<p class="section-tag guided-section-title">${escapeHtml(step.section.name)}</p><h1>${escapeHtml(exerciseName(step.exercise))}</h1>${exerciseDescription(step.exercise) ? `<p class="guided-description">${escapeHtml(exerciseDescription(step.exercise))}</p>` : ""}<p class="timer" id="guided-timer">${clock(session.remaining)}</p><p class="set-indicator">${step.side ? `${step.side} side · ` : ""}Set ${step.setIndex + 1} of ${step.totalSets}</p><div class="guided-actions"><button class="primary-button" id="finish-timed-work">Finish early</button><button class="secondary-button" id="pause-work-timer">Pause</button></div>${alertToggle}`;
+    byId("guided-card").innerHTML = `<p class="section-tag guided-section-title">${escapeHtml(step.section.name)}</p><h1>${escapeHtml(exerciseName(step.exercise))}</h1>${exerciseDescription(step.exercise) ? `<p class="guided-description">${escapeHtml(exerciseDescription(step.exercise))}</p>` : ""}<p class="timer" id="guided-timer">${clock(session.remaining)}</p><p class="set-indicator">${step.side ? `<strong>${step.side} side</strong> · ` : ""}Set <strong>${step.setIndex + 1}</strong> of ${step.totalSets}</p><div class="guided-actions"><button class="primary-button" id="finish-timed-work">Finish early</button><button class="secondary-button" id="pause-work-timer">Pause</button></div>${alertToggle}`;
   } else {
     const primaryAction = isTimedExercise(step.exercise) ? `<button class="primary-button finish-button" id="start-work-timer">Start timer</button>` : `<button class="primary-button finish-button" id="finish-set">Finished set</button>`;
-    byId("guided-card").innerHTML = `<p class="section-tag guided-section-title">${escapeHtml(step.section.name)}</p><h1>${escapeHtml(exerciseName(step.exercise))}</h1>${exerciseDescription(step.exercise) ? `<p class="guided-description">${escapeHtml(exerciseDescription(step.exercise))}</p>` : ""}<p class="guided-target">${targetText(step.exercise.target, false)}</p><p class="set-indicator">${step.side ? `${step.side} side · ` : ""}Set ${step.setIndex + 1} of ${step.totalSets}</p><div class="guided-actions">${primaryAction}<button class="secondary-button" id="skip-set">Skip</button></div>${alertToggle}`;
+    byId("guided-card").innerHTML = `<p class="section-tag guided-section-title">${escapeHtml(step.section.name)}</p><h1>${escapeHtml(exerciseName(step.exercise))}</h1>${exerciseDescription(step.exercise) ? `<p class="guided-description">${escapeHtml(exerciseDescription(step.exercise))}</p>` : ""}<p class="guided-target">${targetText(step.exercise.target, false)}</p><p class="set-indicator">${step.side ? `<strong>${step.side} side</strong> · ` : ""}Set <strong>${step.setIndex + 1}</strong> of ${step.totalSets}</p><div class="guided-actions">${primaryAction}<button class="secondary-button" id="skip-set">Skip</button></div>${alertToggle}`;
   }
 }
 function clock(seconds) { return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`; }
 function formatElapsed(milliseconds) { const seconds = Math.round(milliseconds / 1000); return `${Math.floor(seconds / 60)}m ${seconds % 60}s`; }
 function finishSet(completed = true) {
+  clearInterval(timerId);
+  timerId = null;
   const step = activeSession.steps[activeSession.index];
   const isLast = activeSession.index === activeSession.steps.length - 1;
   activeSession.timerEndsAt = null;
@@ -407,6 +409,14 @@ function createWorkout(event) {
 
 function resetPlan() { if (!confirm("Reset the workout library to the original three-day plan?")) return; data = clone(window.STARTER_WORKOUT_DATA); selectedWorkoutId = data.workouts[0].id; localStorage.removeItem(storageKey); renderLibrary(); }
 
+document.addEventListener("keydown", (event) => {
+  if (event.code !== "Space" || event.repeat || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  if (!byId("guided-page").classList.contains("active") || event.target.closest("button, input, select, textarea, summary, a, [contenteditable]")) return;
+  const primaryAction = byId("guided-card").querySelector(".primary-button:not(:disabled)");
+  if (!primaryAction) return;
+  event.preventDefault();
+  primaryAction.click();
+});
 document.addEventListener("click", (event) => {
   const target = event.target.closest("button");
   if (!target) {

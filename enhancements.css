@@ -119,6 +119,12 @@
   font-size: 16px;
 }
 
+.set-indicator strong {
+  font-family: "DM Sans", sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+}
+
 .timer {
   color: var(--guided-accent);
   font-size: clamp(82px, 14vw, 132px);
