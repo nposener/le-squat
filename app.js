@@ -5,6 +5,7 @@ let data;
 let selectedWorkoutId;
 let activeSession;
 let timerId;
+let alertAudioContext;
 let completedExercises = new Set();
 let sessionPreferences = { alertsEnabled: false, descriptionsVisible: true };
 let editingWorkoutId;
@@ -237,14 +238,16 @@ function renderGuided() {
   byId("progress-fill").style.width = `${(session.index / total) * 100}%`;
   if (!step) { persistActiveSession(); byId("guided-kicker").textContent = "SESSION COMPLETE"; byId("guided-card").innerHTML = `<div class="complete-state"><p class="section-tag">NICE WORK</p><h1>All sets done.</h1><p>${total} steps completed in ${formatElapsed(Date.now() - session.startedAt)}.</p><div class="guided-actions"><button class="primary-button" id="restart-session">Do it again</button><button class="secondary-button" id="return-library">Back to workouts</button></div></div>`; byId("progress-fill").style.width = "100%"; return; }
   const isRest = session.phase === "rest";
+  const isTimed = isTimedExercise(step.exercise);
   byId("guided-kicker").textContent = isRest ? "REST" : step.section.name.toUpperCase();
-  const alertToggle = `<label class="alert-toggle"><input type="checkbox" id="alert-toggle" ${sessionPreferences.alertsEnabled ? "checked" : ""} /> Alert when rest ends</label>`;
+  const alertLabel = isRest ? "Alert when rest ends" : isTimed ? "Alert when set ends" : "";
+  const alertToggle = alertLabel ? `<label class="alert-toggle"><input type="checkbox" id="alert-toggle" ${sessionPreferences.alertsEnabled ? "checked" : ""} /> ${alertLabel}</label>` : "";
   if (isRest) {
     byId("guided-card").innerHTML = `<p class="section-tag">NEXT: ${escapeHtml(stepTitle(step))}</p><h1>Catch your breath.</h1><p class="timer rest" id="guided-timer">${clock(session.remaining)}</p><div class="guided-actions"><button class="primary-button" id="skip-rest">Skip rest</button><button class="secondary-button" id="pause-rest">Pause</button></div>${alertToggle}`;
   } else if (session.phase === "timed-work") {
     byId("guided-card").innerHTML = `<p class="section-tag guided-section-title">${escapeHtml(step.section.name)}</p><h1>${escapeHtml(exerciseName(step.exercise))}</h1>${exerciseDescription(step.exercise) ? `<p class="guided-description">${escapeHtml(exerciseDescription(step.exercise))}</p>` : ""}<p class="timer" id="guided-timer">${clock(session.remaining)}</p><p class="set-indicator">${step.side ? `<strong>${step.side} side</strong> · ` : ""}Set <strong>${step.setIndex + 1}</strong> of ${step.totalSets}</p><div class="guided-actions"><button class="primary-button" id="finish-timed-work">Finish early</button><button class="secondary-button" id="pause-work-timer">Pause</button></div>${alertToggle}`;
   } else {
-    const primaryAction = isTimedExercise(step.exercise) ? `<button class="primary-button finish-button" id="start-work-timer">Start timer</button>` : `<button class="primary-button finish-button" id="finish-set">Finished set</button>`;
+    const primaryAction = isTimed ? `<button class="primary-button finish-button" id="start-work-timer">Start timer</button>` : `<button class="primary-button finish-button" id="finish-set">Finished set</button>`;
     byId("guided-card").innerHTML = `<p class="section-tag guided-section-title">${escapeHtml(step.section.name)}</p><h1>${escapeHtml(exerciseName(step.exercise))}</h1>${exerciseDescription(step.exercise) ? `<p class="guided-description">${escapeHtml(exerciseDescription(step.exercise))}</p>` : ""}<p class="guided-target">${targetText(step.exercise.target, false)}</p><p class="set-indicator">${step.side ? `<strong>${step.side} side</strong> · ` : ""}Set <strong>${step.setIndex + 1}</strong> of ${step.totalSets}</p><div class="guided-actions">${primaryAction}<button class="secondary-button" id="skip-set">Skip</button></div>${alertToggle}`;
   }
 }
@@ -253,6 +256,7 @@ function formatElapsed(milliseconds) { const seconds = Math.round(milliseconds /
 function finishSet(completed = true) {
   clearInterval(timerId);
   timerId = null;
+  prepareAlertAudio();
   const step = activeSession.steps[activeSession.index];
   const isLast = activeSession.index === activeSession.steps.length - 1;
   activeSession.timerEndsAt = null;
@@ -269,20 +273,29 @@ function finishSet(completed = true) {
   renderGuided();
   startTimer();
 }
-function notifyRestFinished() {
+function prepareAlertAudio() {
   if (!sessionPreferences.alertsEnabled) return;
-  if (navigator.vibrate) navigator.vibrate([100, 80, 100]);
   const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextConstructor) return;
   try {
-    const context = new AudioContextConstructor();
-    const oscillator = context.createOscillator();
-    oscillator.connect(context.destination);
+    alertAudioContext ||= new AudioContextConstructor();
+    if (alertAudioContext.state === "suspended") alertAudioContext.resume();
+  } catch (error) { }
+}
+function notifyTimerFinished() {
+  if (!sessionPreferences.alertsEnabled) return;
+  if (navigator.vibrate) navigator.vibrate([100, 80, 100]);
+  prepareAlertAudio();
+  if (!alertAudioContext) return;
+  try {
+    const oscillator = alertAudioContext.createOscillator();
+    oscillator.connect(alertAudioContext.destination);
     oscillator.start();
-    oscillator.stop(context.currentTime + 0.12);
+    oscillator.stop(alertAudioContext.currentTime + 0.12);
   } catch (error) { }
 }
 function startWorkTimer() {
+  prepareAlertAudio();
   const step = activeSession.steps[activeSession.index];
   activeSession.phase = "timed-work";
   activeSession.remaining = targetAmount(step.exercise.target);
@@ -304,8 +317,12 @@ function startTimer() {
         activeSession.index++;
         activeSession.phase = "work";
         activeSession.timerEndsAt = null;
-        notifyRestFinished();
+        notifyTimerFinished();
+        persistActiveSession();
+        renderGuided();
+        return;
       } else {
+        notifyTimerFinished();
         finishSet();
         return;
       }
@@ -451,7 +468,7 @@ document.addEventListener("click", (event) => {
   if (target.id === "clear-builder") setTimeout(resetBuilder);
 });
 byId("workout-form").addEventListener("submit", createWorkout);
-document.addEventListener("change", (event) => { if (event.target.matches(".alternative-select")) { const found = findExercise(event.target.dataset.exerciseId); if (!found) return; found.exercise.selectedVariation = event.target.value === found.exercise.name ? "" : event.target.value; persist(); } if (event.target.matches("[data-complete-id]")) { const { completeId } = event.target.dataset; if (event.target.checked) completedExercises.add(completeId); else completedExercises.delete(completeId); event.target.closest(".exercise-row").classList.toggle("is-complete", event.target.checked); } if (event.target.id === "alert-toggle") { sessionPreferences.alertsEnabled = event.target.checked; persistSessionPreferences(); } if (event.target.id === "description-toggle") { sessionPreferences.descriptionsVisible = event.target.checked; persistSessionPreferences(); setDescriptionVisibility(sessionPreferences.descriptionsVisible); } });
+document.addEventListener("change", (event) => { if (event.target.matches(".alternative-select")) { const found = findExercise(event.target.dataset.exerciseId); if (!found) return; found.exercise.selectedVariation = event.target.value === found.exercise.name ? "" : event.target.value; persist(); } if (event.target.matches("[data-complete-id]")) { const { completeId } = event.target.dataset; if (event.target.checked) completedExercises.add(completeId); else completedExercises.delete(completeId); event.target.closest(".exercise-row").classList.toggle("is-complete", event.target.checked); } if (event.target.id === "alert-toggle") { sessionPreferences.alertsEnabled = event.target.checked; persistSessionPreferences(); prepareAlertAudio(); } if (event.target.id === "description-toggle") { sessionPreferences.descriptionsVisible = event.target.checked; persistSessionPreferences(); setDescriptionVisibility(sessionPreferences.descriptionsVisible); } });
 document.addEventListener("toggle", (event) => {
   if (!event.target.matches(".exercise-config")) return;
   openExerciseConfigId = event.target.open ? event.target.dataset.configExerciseId : undefined;

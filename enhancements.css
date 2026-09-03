@@ -69,8 +69,26 @@
   background: var(--guided-accent);
 }
 
+.app-shell:has(.guided-page.active) {
+  padding-bottom: 0;
+}
+
+.guided-page {
+  padding-top: 12px;
+}
+
+.guided-page .back-button {
+  margin-bottom: 16px;
+}
+
+.guided-page .progress-line {
+  margin: 8px 0 14px;
+}
+
 .guided-card {
-  gap: 22px;
+  min-height: 400px;
+  padding: clamp(20px, 4vh, 32px);
+  gap: 12px;
   border-left: 7px solid var(--guided-accent);
   background: var(--guided-surface);
 }
@@ -86,7 +104,8 @@
 }
 
 .guided-card h1 {
-  font-size: clamp(44px, 6.25vw, 68px);
+  font-size: 42px;
+  line-height: 0.98;
 }
 
 .guided-card .guided-section-title {
@@ -111,8 +130,8 @@
   max-width: 34rem;
   margin: 0;
   color: var(--muted);
-  font-size: 16px;
-  line-height: 1.45;
+  font-size: 14px;
+  line-height: 1.35;
 }
 
 .set-indicator {
@@ -127,7 +146,7 @@
 
 .timer {
   color: var(--guided-accent);
-  font-size: clamp(82px, 14vw, 132px);
+  font-size: 80px;
 }
 
 .timer.rest {
@@ -143,7 +162,7 @@
 }
 
 .alert-toggle input {
-  accent-color: var(--coral);
+  accent-color: var(--guided-accent);
 }
 
 .builder-section {
