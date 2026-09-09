@@ -60,6 +60,17 @@
   outline-offset: 2px;
 }
 
+.wake-lock-switch,
+.workout-mobile-tools {
+  display: none;
+}
+
+.guided-header-tools {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
 .descriptions-hidden .exercise-description,
 .descriptions-hidden .guided-description {
   display: none;
@@ -208,6 +219,29 @@
 @media (max-width: 680px) {
   .workout-actions {
     justify-content: flex-start;
+  }
+
+  .workout-mobile-tools {
+    display: flex;
+    justify-content: flex-end;
+    margin: 4px 0 14px;
+  }
+
+  .wake-lock-switch {
+    display: inline-flex;
+  }
+
+  .wake-lock-switch:has(input:disabled) {
+    cursor: not-allowed;
+    opacity: .5;
+  }
+
+  .guided-header {
+    align-items: center;
+  }
+
+  .guided-header-tools {
+    gap: 12px;
   }
 
   .builder-section-top {

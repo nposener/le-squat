@@ -1,13 +1,16 @@
 const storageKey = "set-go-workouts-v1";
 const activeSessionStorageKey = "set-go-active-session-v1";
 const sessionPreferencesStorageKey = "set-go-session-preferences-v1";
+const activeSessionVersion = 2;
 let data;
 let selectedWorkoutId;
 let activeSession;
 let timerId;
 let alertAudioContext;
+let screenWakeLock;
+let wakeLockRequestGeneration = 0;
 let completedExercises = new Set();
-let sessionPreferences = { alertsEnabled: false, descriptionsVisible: true };
+let sessionPreferences = { alertsEnabled: false, descriptionsVisible: true, keepScreenOn: false };
 let editingWorkoutId;
 let openExerciseConfigId;
 const starterExerciseDescriptions = {
@@ -98,10 +101,40 @@ function persistActiveSession() {
     localStorage.removeItem(activeSessionStorageKey);
     return;
   }
-  const { workoutId, index, phase, remaining, timerEndsAt, startedAt, completedExerciseIds } = activeSession;
-  localStorage.setItem(activeSessionStorageKey, JSON.stringify({ workoutId, index, phase, remaining, timerEndsAt, startedAt, completedExerciseIds }));
+  const { workoutId, index, phase, remaining, timerEndsAt, startedAt, completedExerciseIds, progressionVersion } = activeSession;
+  localStorage.setItem(activeSessionStorageKey, JSON.stringify({ workoutId, index, phase, remaining, timerEndsAt, startedAt, completedExerciseIds, progressionVersion }));
 }
 function persistSessionPreferences() { localStorage.setItem(sessionPreferencesStorageKey, JSON.stringify(sessionPreferences)); }
+function syncWakeLockControls() {
+  const supported = "wakeLock" in navigator;
+  document.querySelectorAll(".wake-lock-toggle").forEach((control) => {
+    control.checked = sessionPreferences.keepScreenOn;
+    control.disabled = !supported;
+    control.closest("label").title = supported ? "Keep screen on" : "Not supported by this browser";
+  });
+}
+async function updateScreenWakeLock() {
+  syncWakeLockControls();
+  const requestGeneration = ++wakeLockRequestGeneration;
+  if (!sessionPreferences.keepScreenOn || document.visibilityState !== "visible") {
+    if (screenWakeLock) {
+      const lock = screenWakeLock;
+      screenWakeLock = undefined;
+      try { await lock.release(); } catch (error) { }
+    }
+    return;
+  }
+  if (screenWakeLock || !("wakeLock" in navigator)) return;
+  try {
+    const lock = await navigator.wakeLock.request("screen");
+    if (requestGeneration !== wakeLockRequestGeneration || !sessionPreferences.keepScreenOn || document.visibilityState !== "visible") {
+      await lock.release();
+      return;
+    }
+    screenWakeLock = lock;
+    lock.addEventListener("release", () => { if (screenWakeLock === lock) screenWakeLock = undefined; });
+  } catch (error) { }
+}
 function setDescriptionVisibility(visible) {
   document.body.classList.toggle("descriptions-hidden", !visible);
   byId("description-toggle").checked = visible;
@@ -140,7 +173,8 @@ function renderLibrary() {
   const selected = currentWorkout() || data.workouts[0];
   selectedWorkoutId = selected.id;
   byId("workout-selector").innerHTML = data.workouts.map((workout) => `<button class="workout-tab ${workout.id === selected.id ? "active" : ""}" style="--accent: var(--${workout.accent || "coral"})" data-workout-id="${workout.id}" role="tab" aria-selected="${workout.id === selected.id}"><strong>${escapeHtml(workout.name)}</strong><span>${escapeHtml(workout.subtitle || "Custom workout")}</span></button>`).join("");
-  byId("workout-panel").innerHTML = `<div class="workout-title"><div><h2>${escapeHtml(selected.name)}</h2><p>${escapeHtml(selected.subtitle || "Custom workout")} / ${estimateText(selected)}</p></div><div class="workout-actions">${isCustomWorkout(selected) ? `<button class="secondary-button" id="edit-workout">Edit workout</button>` : ""}${hasResumableSession() ? `<button class="secondary-button" id="resume-session">Resume session</button><button class="secondary-button" id="stop-session">Stop session</button>` : ""}<button class="secondary-button reset-progress" id="reset-progress">Reset checks</button><button class="primary-button" id="start-workout">Start guided session</button></div></div>${selected.sections.map(renderSection).join("")}`;
+  byId("workout-panel").innerHTML = `<div class="workout-title"><div><h2>${escapeHtml(selected.name)}</h2><p>${escapeHtml(selected.subtitle || "Custom workout")} / ${estimateText(selected)}</p></div><div class="workout-actions">${isCustomWorkout(selected) ? `<button class="secondary-button" id="edit-workout">Edit workout</button>` : ""}${hasResumableSession() ? `<button class="secondary-button" id="resume-session">Resume session</button><button class="secondary-button" id="stop-session">Stop session</button>` : ""}<button class="secondary-button reset-progress" id="reset-progress">Reset checks</button><button class="primary-button" id="start-workout">Start guided session</button></div></div><div class="workout-mobile-tools"><label class="description-switch wake-lock-switch"><span>Keep screen on</span><input type="checkbox" class="wake-lock-toggle" /><i aria-hidden="true"></i></label></div>${selected.sections.map(renderSection).join("")}`;
+  syncWakeLockControls();
 }
 
 function renderSection(section) {
@@ -195,7 +229,7 @@ function flattenedExercises(workout) {
 }
 function startGuided() {
   completedExercises = new Set();
-  activeSession = { workoutId: currentWorkout().id, steps: flattenedExercises(currentWorkout()), index: 0, phase: "work", remaining: 0, timerEndsAt: null, startedAt: Date.now(), completedExerciseIds: [] };
+  activeSession = { workoutId: currentWorkout().id, steps: flattenedExercises(currentWorkout()), index: 0, phase: "work", remaining: 0, timerEndsAt: null, startedAt: Date.now(), completedExerciseIds: [], progressionVersion: activeSessionVersion };
   clearInterval(timerId);
   persistActiveSession();
   showPage("guided");
@@ -265,7 +299,8 @@ function finishSet(completed = true) {
     activeSession.completedExerciseIds = [...completedExercises];
   }
   const rest = shouldRestAfterStep(step) ? exerciseRest(step.exercise) : 0;
-  if (isLast || !rest) { activeSession.index++; activeSession.phase = "work"; persistActiveSession(); renderGuided(); return; }
+  activeSession.index++;
+  if (isLast || !rest) { activeSession.phase = "work"; persistActiveSession(); renderGuided(); return; }
   activeSession.phase = "rest";
   activeSession.remaining = rest;
   activeSession.timerEndsAt = Date.now() + (rest * 1000);
@@ -314,7 +349,6 @@ function startTimer() {
       clearInterval(timerId);
       timerId = null;
       if (activeSession.phase === "rest") {
-        activeSession.index++;
         activeSession.phase = "work";
         activeSession.timerEndsAt = null;
         notifyTimerFinished();
@@ -334,7 +368,7 @@ function startTimer() {
     }
   }, 250);
 }
-function skipRest() { clearInterval(timerId); timerId = null; activeSession.index++; activeSession.phase = "work"; activeSession.timerEndsAt = null; persistActiveSession(); renderGuided(); }
+function skipRest() { clearInterval(timerId); timerId = null; activeSession.phase = "work"; activeSession.timerEndsAt = null; persistActiveSession(); renderGuided(); }
 function toggleTimer(buttonId) { if (timerId) { clearInterval(timerId); timerId = null; activeSession.timerEndsAt = null; persistActiveSession(); byId(buttonId).textContent = "Resume"; } else { startTimer(); persistActiveSession(); byId(buttonId).textContent = "Pause"; } }
 
 function showPage(page) { clearInterval(timerId); timerId = null; document.querySelectorAll(".page").forEach((element) => element.classList.remove("active")); document.querySelectorAll(".nav-link").forEach((element) => element.classList.toggle("active", element.dataset.page === page)); byId(`${page}-page`).classList.add("active"); if (page === "library") renderLibrary(); }
@@ -468,7 +502,8 @@ document.addEventListener("click", (event) => {
   if (target.id === "clear-builder") setTimeout(resetBuilder);
 });
 byId("workout-form").addEventListener("submit", createWorkout);
-document.addEventListener("change", (event) => { if (event.target.matches(".alternative-select")) { const found = findExercise(event.target.dataset.exerciseId); if (!found) return; found.exercise.selectedVariation = event.target.value === found.exercise.name ? "" : event.target.value; persist(); } if (event.target.matches("[data-complete-id]")) { const { completeId } = event.target.dataset; if (event.target.checked) completedExercises.add(completeId); else completedExercises.delete(completeId); event.target.closest(".exercise-row").classList.toggle("is-complete", event.target.checked); } if (event.target.id === "alert-toggle") { sessionPreferences.alertsEnabled = event.target.checked; persistSessionPreferences(); prepareAlertAudio(); } if (event.target.id === "description-toggle") { sessionPreferences.descriptionsVisible = event.target.checked; persistSessionPreferences(); setDescriptionVisibility(sessionPreferences.descriptionsVisible); } });
+document.addEventListener("change", (event) => { if (event.target.matches(".alternative-select")) { const found = findExercise(event.target.dataset.exerciseId); if (!found) return; found.exercise.selectedVariation = event.target.value === found.exercise.name ? "" : event.target.value; persist(); } if (event.target.matches("[data-complete-id]")) { const { completeId } = event.target.dataset; if (event.target.checked) completedExercises.add(completeId); else completedExercises.delete(completeId); event.target.closest(".exercise-row").classList.toggle("is-complete", event.target.checked); } if (event.target.id === "alert-toggle") { sessionPreferences.alertsEnabled = event.target.checked; persistSessionPreferences(); prepareAlertAudio(); } if (event.target.id === "description-toggle") { sessionPreferences.descriptionsVisible = event.target.checked; persistSessionPreferences(); setDescriptionVisibility(sessionPreferences.descriptionsVisible); } if (event.target.matches(".wake-lock-toggle")) { sessionPreferences.keepScreenOn = event.target.checked; persistSessionPreferences(); updateScreenWakeLock(); } });
+document.addEventListener("visibilitychange", updateScreenWakeLock);
 document.addEventListener("toggle", (event) => {
   if (!event.target.matches(".exercise-config")) return;
   openExerciseConfigId = event.target.open ? event.target.dataset.configExerciseId : undefined;
@@ -478,15 +513,18 @@ loadData().then((loaded) => {
   selectedWorkoutId = data.workouts[0]?.id;
   sessionPreferences = { ...sessionPreferences, ...JSON.parse(localStorage.getItem(sessionPreferencesStorageKey) || "{}") };
   setDescriptionVisibility(sessionPreferences.descriptionsVisible);
+  updateScreenWakeLock();
   const savedSession = JSON.parse(localStorage.getItem(activeSessionStorageKey) || "null");
   if (savedSession?.restEndsAt && !savedSession.timerEndsAt) savedSession.timerEndsAt = savedSession.restEndsAt;
   const savedWorkout = savedSession && data.workouts.find((workout) => workout.id === savedSession.workoutId);
   if (savedWorkout) {
     const steps = flattenedExercises(savedWorkout);
+    if (savedSession.phase === "rest" && savedSession.progressionVersion !== activeSessionVersion) savedSession.index++;
+    savedSession.progressionVersion = activeSessionVersion;
     if (savedSession.index < steps.length) {
       activeSession = { ...savedSession, steps, completedExerciseIds: savedSession.completedExerciseIds || [] };
       completedExercises = new Set(activeSession.completedExerciseIds);
-      if (activeSession.phase === "rest" && activeSession.timerEndsAt <= Date.now()) { activeSession.index++; activeSession.phase = "work"; activeSession.remaining = 0; activeSession.timerEndsAt = null; persistActiveSession(); }
+      if (activeSession.phase === "rest" && activeSession.timerEndsAt <= Date.now()) { activeSession.phase = "work"; activeSession.remaining = 0; activeSession.timerEndsAt = null; persistActiveSession(); }
     } else localStorage.removeItem(activeSessionStorageKey);
   }
   renderLibrary();
